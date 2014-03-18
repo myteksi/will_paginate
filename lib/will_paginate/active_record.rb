@@ -23,22 +23,6 @@ module WillPaginate
       attr_accessor :current_page
       attr_writer :total_entries, :wp_count_options
 
-      def per_page(value = nil)
-        if value.nil? then limit_value
-        else limit(value)
-        end
-      end
-
-      # TODO: solve with less relation clones and code dups
-      def limit(num)
-        rel = super
-        if rel.current_page
-          rel.offset rel.current_page.to_offset(rel.limit_value).to_i
-        else
-          rel
-        end
-      end
-
       # dirty hack to enable `first` after `limit` behavior above
       def first(*args)
         if current_page
@@ -67,14 +51,10 @@ module WillPaginate
 
       def total_entries
         @total_entries ||= begin
-          if loaded? and size < limit_value and (current_page == 1 or size > 0)
-            offset_value + size
-          else
-            @total_entries_queried = true
-            result = count
-            result = result.size if result.respond_to?(:size) and !result.is_a?(Integer)
-            result
-          end
+          @total_entries_queried = true
+          result = count
+          result = result.size if result.respond_to?(:size) and !result.is_a?(Integer)
+          result
         end
       end
 
@@ -150,10 +130,25 @@ module WillPaginate
         count_options = options.delete(:count)
         options.delete(:page)
 
-        rel = limit(per_page.to_i).page(pagenum)
+        # Need to call `page` first so that we get to extend RelationMethods,
+        # which provides `total_entries=`.
+        rel = page(pagenum)
+        # Always get the total first, as we need it to adjust the limit later.
+        if total.blank?
+          rel.total_entries = rel.count
+        else
+          rel.total_entries = total.to_i
+        end
+        # Last page, adjust limit accordingly to help database with lousy query
+        # planner, such as mysql, which may traverse all records if it picks
+        # the wrong index and there are less rows to be returned than limit.
+        if pagenum.to_i * per_page.to_i > rel.total_entries
+          rel = rel.limit(rel.total_entries % per_page.to_i)
+        else
+          rel = rel.limit(per_page.to_i)
+        end
         rel = rel.apply_finder_options(options) if options.any?
         rel.wp_count_options = count_options    if count_options
-        rel.total_entries = total.to_i          unless total.blank?
         rel
       end
 
