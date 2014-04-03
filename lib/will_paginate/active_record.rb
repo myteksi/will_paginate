@@ -21,7 +21,27 @@ module WillPaginate
       include WillPaginate::CollectionMethods
 
       attr_accessor :current_page
+      # Store the actual page size here, instead of equaling it with the LIMIT
+      # value. When retrieving records for the last page, we may set a LIMIT
+      # value that is less than the page size.
+      attr_accessor :actual_per_page
       attr_writer :total_entries, :wp_count_options
+
+      def per_page(value = nil)
+        if value.nil? then actual_per_page
+        else limit(value)
+        end
+      end
+
+      def limit(num)
+        rel = super
+        rel.actual_per_page = num
+        if rel.current_page
+          rel.offset rel.current_page.to_offset(num).to_i
+        else
+          rel
+        end
+      end
 
       # dirty hack to enable `first` after `limit` behavior above
       def first(*args)
@@ -51,10 +71,14 @@ module WillPaginate
 
       def total_entries
         @total_entries ||= begin
-          @total_entries_queried = true
-          result = count
-          result = result.size if result.respond_to?(:size) and !result.is_a?(Integer)
-          result
+          if loaded? and size < limit_value and (current_page == 1 or size > 0)
+            offset_value + size
+          else
+            @total_entries_queried = true
+            result = count
+            result = result.size if result.respond_to?(:size) and !result.is_a?(Integer)
+            result
+          end
         end
       end
 
@@ -130,25 +154,18 @@ module WillPaginate
         count_options = options.delete(:count)
         options.delete(:page)
 
-        # Need to call `page` first so that we get to extend RelationMethods,
-        # which provides `total_entries=`.
-        rel = page(pagenum)
-        # Always get the total first, as we need it to adjust the limit later.
-        if total.blank?
-          rel.total_entries = rel.count
-        else
-          rel.total_entries = total.to_i
-        end
+        rel = page(pagenum).limit(per_page.to_i)
+        rel = rel.apply_finder_options(options) if options.any?
+        rel.wp_count_options = count_options    if count_options
+        rel.total_entries = total.to_i          unless total.blank?
         # Last page, adjust limit accordingly to help database with lousy query
         # planner, such as mysql, which may traverse all records if it picks
         # the wrong index and there are less rows to be returned than limit.
         if pagenum.to_i * per_page.to_i > rel.total_entries
-          rel = rel.limit(rel.total_entries % per_page.to_i)
-        else
-          rel = rel.limit(per_page.to_i)
+          # Set `limit_value` directly, bypassing the `limit` method, to avoid
+          # messing up `actual_per_page`.
+          rel.limit_value = rel.total_entries % per_page.to_i unless count_options
         end
-        rel = rel.apply_finder_options(options) if options.any?
-        rel.wp_count_options = count_options    if count_options
         rel
       end
 

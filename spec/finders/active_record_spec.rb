@@ -35,11 +35,11 @@ describe WillPaginate::ActiveRecord do
         rel = Developer.paginate(:page => 1)
         rel.per_page.should == 10
         rel.current_page.should == 1
-      }.should run_queries(0)
+      }.should run_queries(1)
 
       lambda {
         rel.total_pages.should == 2
-      }.should run_queries(1)
+      }.should run_queries(0)
     end
 
     it "should keep per-class per_page number" do
@@ -54,9 +54,7 @@ describe WillPaginate::ActiveRecord do
 
     it "remembers pagination in sub-relations" do
       rel = Topic.paginate(:page => 2, :per_page => 3)
-      lambda {
-        rel.total_entries.should == 4
-      }.should run_queries(1)
+      rel.total_entries.should == 4
       rel = rel.mentions_activerecord
       rel.current_page.should == 2
       rel.per_page.should == 3
@@ -185,7 +183,7 @@ describe WillPaginate::ActiveRecord do
         developers = Developer.paginate(:page => 1, :per_page => 1).includes(:projects)
         developers.total_entries.should == 11
         $query_sql.last.should_not =~ /\bJOIN\b/
-      }.should run_queries(1)
+      }.should run_queries(2)
     end
 
     it "keeps :include for count when they are referenced in :conditions" do
@@ -272,14 +270,14 @@ describe WillPaginate::ActiveRecord do
     options.should == options_before
   end
   
-  it "should get first page of Topics with a single query" do
+  it "should get first page of Topics with 2 queries" do
     lambda {
       result = Topic.paginate :page => nil
       result.to_a # trigger loading of records
       result.current_page.should == 1
       result.total_pages.should == 1
       result.size.should == 4
-    }.should run_queries(1)
+    }.should run_queries(2)
   end
   
   it "should get second (inexistent) page of Topics, requiring 2 queries" do
@@ -324,7 +322,7 @@ describe WillPaginate::ActiveRecord do
     lambda {
       result = Topic.paginate(:page => 1, :include => :replies, :per_page => 10,
         :order => 'replies.created_at asc, topics.created_at asc').to_a
-    }.should run_queries(2)
+    }.should run_queries(3)
 
     expected = Topic.find :all, 
       :include => 'replies', 
@@ -363,7 +361,7 @@ describe WillPaginate::ActiveRecord do
         result = ignore_deprecation { dhh.projects.paginate(:page => 1) }
         result.should == expected_name_ordered
         result.total_entries.should == 2
-      }.should run_queries(2)
+      }.should run_queries(3)
 
       # with explicit order
       result = dhh.projects.paginate(:page => 1).reorder('projects.id')
@@ -392,7 +390,7 @@ describe WillPaginate::ActiveRecord do
       lambda {
         result = project.replies.only_recent.paginate(:page => 1)
         result.should == expected
-      }.should run_queries(1)
+      }.should run_queries(2)
     end
   end
   
@@ -407,7 +405,7 @@ describe WillPaginate::ActiveRecord do
       developer_names = result.map(&:name)
       developer_names.should include('David')
       developer_names.should include('Jamis')
-    }.should run_queries(1)
+    }.should run_queries(2)
 
     lambda {
       expected = result.to_a
@@ -415,7 +413,7 @@ describe WillPaginate::ActiveRecord do
         :conditions => 'project_id = 1', :count => { :select => "users.id" }).to_a
       result.should == expected
       result.total_entries.should == 2
-    }.should run_queries(1)
+    }.should run_queries(2)
   end
 
   it "should paginate with group" do
@@ -423,7 +421,7 @@ describe WillPaginate::ActiveRecord do
     lambda {
       result = Developer.paginate(:page => 1, :per_page => 10,
         :group => 'salary', :select => 'salary', :order => 'salary').to_a
-    }.should run_queries(1)
+    }.should run_queries(2)
 
     expected = users(:david, :jamis, :dev_10, :poor_jamis).map(&:salary).sort
     result.map(&:salary).should == expected
