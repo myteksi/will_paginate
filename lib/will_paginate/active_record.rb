@@ -161,7 +161,7 @@ module WillPaginate
         # Last page, adjust limit accordingly to help database with lousy query
         # planner, such as mysql, which may traverse all records if it picks
         # the wrong index and there are less rows to be returned than limit.
-        if pagenum.to_i * per_page.to_i > rel.total_entries
+        if rel.current_page.to_i * per_page.to_i > rel.total_entries
           # Set `limit_value` directly, bypassing the `limit` method, to avoid
           # messing up `actual_per_page`.
           rel.limit_value = rel.total_entries % per_page.to_i unless count_options
