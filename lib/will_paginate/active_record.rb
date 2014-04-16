@@ -175,9 +175,10 @@ module WillPaginate
           # Set `offset_value` directly, bypassing the `offset` method, to
           # preserve `offset_value_for_empty_check`.
           rel.offset_value = 0
-        # Last page, adjust limit accordingly to help database with lousy query
-        # planner, such as mysql, which may traverse all records if it picks
-        # the wrong index and there are less rows to be returned than limit.
+        # Last partial page, adjust limit accordingly to help database with
+        # lousy query planner, such as mysql, which may traverse all records if
+        # it picks the wrong index and there are less rows to be returned than
+        # limit.
         elsif rel.offset + per_page.to_i > rel.total_entries
           # Set `limit_value` directly, bypassing the `limit` method, to avoid
           # messing up `actual_per_page`.
