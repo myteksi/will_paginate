@@ -25,6 +25,10 @@ module WillPaginate
       # value. When retrieving records for the last page, we may set a LIMIT
       # value that is less than the page size.
       attr_accessor :actual_per_page
+      # Store the OFFSET value for empty check separately. When last page++ is
+      # requested, we reset the OFFSET value to be 0 to speed up the query that
+      # returns nothing. The reset can trip up the empty check.
+      attr_accessor :offset_value_for_empty_check
       attr_writer :total_entries, :wp_count_options
 
       def per_page(value = nil)
@@ -65,7 +69,9 @@ module WillPaginate
 
       def offset(value = nil)
         if value.nil? then offset_value
-        else super(value)
+        else
+          @offset_value_for_empty_check = value
+          super(value)
         end
       end
 
@@ -106,10 +112,10 @@ module WillPaginate
 
       # overloaded to be pagination-aware
       def empty?
-        if !loaded? and offset_value
+        if !loaded? and offset_value_for_empty_check
           result = count
           result = result.size if result.respond_to?(:size) and !result.is_a?(Integer)
-          result <= offset_value
+          result <= offset_value_for_empty_check
         else
           super
         end
@@ -158,10 +164,21 @@ module WillPaginate
         rel = rel.apply_finder_options(options) if options.any?
         rel.wp_count_options = count_options    if count_options
         rel.total_entries = total.to_i          unless total.blank?
+        # Last page++, return nothing. We do so by setting limit and offset to
+        # zero. The latter is needed to help database with lousy query planner,
+        # such as mysql, which will still traverse the records until the offset
+        # despite already having limit set to 0
+        if rel.offset >= rel.total_entries
+          # Set `limit_value` directly, bypassing the `limit` method, to avoid
+          # messing up `actual_per_page`.
+          rel.limit_value = 0
+          # Set `offset_value` directly, bypassing the `offset` method, to
+          # preserve `offset_value_for_empty_check`.
+          rel.offset_value = 0
         # Last page, adjust limit accordingly to help database with lousy query
         # planner, such as mysql, which may traverse all records if it picks
         # the wrong index and there are less rows to be returned than limit.
-        if rel.current_page.to_i * per_page.to_i > rel.total_entries
+        elsif rel.current_page.to_i * per_page.to_i > rel.total_entries
           # Set `limit_value` directly, bypassing the `limit` method, to avoid
           # messing up `actual_per_page`.
           rel.limit_value = rel.total_entries % per_page.to_i unless count_options
